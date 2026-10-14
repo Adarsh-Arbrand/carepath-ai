@@ -94,7 +94,7 @@ export function Questionnaire({ onSubmit, isLoading }: QuestionnaireProps) {
     }
     const heading = containerRef.current?.querySelector<HTMLElement>('[data-step-heading]');
     heading?.focus({ preventScroll: true });
-    heading?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    heading?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
   }, [step]);
 
   const updateField = (field: keyof SymptomRequest, value: any) => {

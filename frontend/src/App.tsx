@@ -268,7 +268,7 @@ function App() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ block: 'start' })}
+                    onClick={() => document.getElementById('how-it-works')?.scrollIntoView?.({ block: 'start' })}
                     className="rounded-md py-2 text-base font-medium text-navy-700 underline decoration-navy-300 underline-offset-4 transition-colors hover:text-teal-700 hover:decoration-teal-500"
                   >
                     How it works

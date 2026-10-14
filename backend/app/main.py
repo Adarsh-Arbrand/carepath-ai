@@ -155,7 +155,7 @@ async def assess_symptoms(request: Request, data: SymptomRequest):
 
     # Get AI explanation (or demo mode fallback)
     try:
-        ai_explanation, is_demo_mode = ai_service.get_explanation(
+        ai_explanation, is_demo_mode = await ai_service.get_explanation_async(
             data, safety_urgency, safety_reasoning
         )
     except Exception as e:

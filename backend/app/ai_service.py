@@ -13,11 +13,23 @@ IMPORTANT:
 - AI output adds explanatory context but never overrides safety rules
 """
 
+import asyncio
 import os
 from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field
 import google.generativeai as genai
 from app.models import SymptomRequest, UrgencyLevel
+
+DEFAULT_AI_TIMEOUT_SECONDS = 30
+
+
+def _read_timeout_seconds() -> int:
+    """Read AI_TIMEOUT (seconds); fall back to the default on missing/invalid values."""
+    try:
+        value = int(os.getenv("AI_TIMEOUT", str(DEFAULT_AI_TIMEOUT_SECONDS)))
+    except ValueError:
+        return DEFAULT_AI_TIMEOUT_SECONDS
+    return value if value > 0 else DEFAULT_AI_TIMEOUT_SECONDS
 
 
 class AIExplanation(BaseModel):
@@ -42,7 +54,7 @@ class AIService:
         self.api_key = os.getenv("GEMINI_API_KEY")
         self.model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
         self.enabled = bool(self.api_key)
-        self.timeout = int(os.getenv("AI_TIMEOUT", "30"))
+        self.timeout = _read_timeout_seconds()
 
         if self.enabled:
             try:
@@ -77,6 +89,33 @@ class AIService:
             return explanation, False
         except Exception as e:
             print(f"AI call failed: {e}")
+            return self._get_demo_explanation(request, safety_urgency), True
+
+    async def get_explanation_async(
+        self,
+        request: SymptomRequest,
+        safety_urgency: UrgencyLevel,
+        safety_reasoning: str
+    ) -> tuple[AIExplanation, bool]:
+        """
+        Non-blocking wrapper around get_explanation for use inside async endpoints.
+
+        The Gemini SDK call is synchronous, so it runs in a worker thread to keep the
+        event loop free. If it exceeds the configured timeout, the deterministic demo
+        explanation is returned. The safety engine's urgency is never affected.
+        """
+        if not self.enabled:
+            return self._get_demo_explanation(request, safety_urgency), True
+
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(
+                    self.get_explanation, request, safety_urgency, safety_reasoning
+                ),
+                timeout=self.timeout,
+            )
+        except asyncio.TimeoutError:
+            print(f"AI call timed out after {self.timeout}s; using demo explanation")
             return self._get_demo_explanation(request, safety_urgency), True
 
     def _call_llm(
@@ -133,7 +172,8 @@ Remember: You are providing general educational information only, not medical ad
                 generation_config=genai.types.GenerationConfig(
                     temperature=0.3,
                     max_output_tokens=1000,
-                )
+                ),
+                request_options={"timeout": self.timeout},
             )
 
             # Parse the response into structured format

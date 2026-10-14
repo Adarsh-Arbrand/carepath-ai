@@ -24,8 +24,83 @@ Scope: General informational guidance only
 Limitations: Not comprehensive, not clinically validated, not a substitute for professional medical advice
 """
 
-from typing import List, Tuple
+import re
+import unicodedata
+from typing import Dict, List, Pattern, Tuple
+
 from app.models import UrgencyLevel, SymptomRequest, WarningSign
+
+
+# --- Text normalization ------------------------------------------------------
+# Typographic apostrophes (phone keyboards, word processors) -> ASCII apostrophe.
+_APOSTROPHE_TABLE = {ord(c): "'" for c in "\u2018\u2019\u201b\u02bc\u00b4\u2032`"}
+_ZERO_WIDTH_TABLE = {ord(c): None for c in "\u200b\u200c\u200d\u2060\ufeff"}
+
+_CONTRACTIONS = {
+    "don't": "do not", "doesn't": "does not", "didn't": "did not",
+    "won't": "will not", "can't": "cannot", "couldn't": "could not",
+    "shouldn't": "should not", "wouldn't": "would not", "isn't": "is not",
+    "aren't": "are not", "wasn't": "was not", "weren't": "were not",
+    "haven't": "have not", "hasn't": "has not", "hadn't": "had not",
+    "i'm": "i am", "it's": "it is", "that's": "that is",
+    # Frequently typed without the apostrophe
+    "cant": "cannot", "dont": "do not", "doesnt": "does not", "didnt": "did not",
+    "couldnt": "could not", "shouldnt": "should not", "wouldnt": "would not",
+    "isnt": "is not", "arent": "are not", "wasnt": "was not", "werent": "were not",
+    "havent": "have not", "hasnt": "has not", "hadnt": "had not",
+    "can not": "cannot",
+}
+_CONTRACTION_RE = re.compile(
+    r"\b(" + "|".join(re.escape(k) for k in sorted(_CONTRACTIONS, key=len, reverse=True)) + r")\b"
+)
+
+
+def _normalize(text: str) -> str:
+    """Lower-case, unify apostrophes, strip invisible characters, expand contractions."""
+    # Map apostrophes first: NFKC would turn U+00B4 into a combining accent.
+    text = text.translate(_ZERO_WIDTH_TABLE).translate(_APOSTROPHE_TABLE)
+    text = unicodedata.normalize("NFKC", text).lower()
+    text = _CONTRACTION_RE.sub(lambda m: _CONTRACTIONS[m.group(0)], text)
+    return " ".join(text.split())
+
+
+# --- Negation handling (conservative, deliberately NOT full NLP) ------------
+# A negation only applies to a symptom in the same clause, within a few words.
+# Punctuation and contrast words end a clause, so "no chest pain but shortness of
+# breath" still flags the shortness of breath. Anything uncertain is NOT negated.
+_CLAUSE_SPLIT_RE = re.compile(
+    r"[.,;:!?()\[\]/\u2014\u2013]+|\b(?:but|however|although|though|except|yet|while|whereas|and)\b"
+)
+_TOKEN_RE = re.compile(r"[a-z0-9']+")
+_NEGATION_CUES = frozenset({"no", "not", "never", "without", "none", "neither", "nor"})
+_NEGATION_WINDOW = 4  # the cue must be within the last 4 words before the symptom
+
+
+# --- Sign matching -----------------------------------------------------------
+# Signs must start at a word boundary ("benefit" must not match "fit", "spain" must
+# not match "pain"). Word endings stay open so "painful", "seizures", "vomiting" still
+# match, as they did with plain substring search.
+_LEFT_OPEN_SIGNS = frozenset({"ache"})            # headache, toothache, earache
+_WHOLE_WORD_SIGNS = {"fit": r"(?:s|ting)?"}       # "fit" must not match "fitness"
+
+_Matcher = Tuple[str, dict, Pattern[str]]
+
+
+def _sign_pattern(sign: str) -> Pattern[str]:
+    body = re.escape(_normalize(sign))
+    left = "" if sign in _LEFT_OPEN_SIGNS else r"(?<![a-z0-9])"
+    right = (_WHOLE_WORD_SIGNS[sign] + r"(?![a-z0-9])") if sign in _WHOLE_WORD_SIGNS else ""
+    return re.compile(left + body + right)
+
+
+def _compile_rules(rules: Dict[str, dict]) -> Tuple[_Matcher, ...]:
+    """Pre-compile every sign once at import time instead of per request."""
+    return tuple(
+        (sign, rule, _sign_pattern(sign))
+        for rule in rules.values()
+        for sign in rule["signs"]
+    )
+
 
 
 class TriageEngine:
@@ -200,80 +275,65 @@ class TriageEngine:
         },
     }
 
+
+    # Compiled once at import time (see _compile_rules).
+    _EMERGENCY_MATCHERS = _compile_rules(EMERGENCY_RULES)
+    _URGENT_MATCHERS = _compile_rules(URGENT_RULES)
+
     @classmethod
     def _normalize_text(cls, text: str) -> str:
+        """Kept for backward compatibility; see module-level _normalize."""
+        return _normalize(text)
+
+    @staticmethod
+    def _is_negated(clause: str, match_start: int) -> bool:
         """
-        Normalize text by handling Unicode apostrophes and common contractions.
-        This is a conservative approach, not full NLP.
+        True if a negation word appears within the last few words before the match,
+        inside the same clause. Conservative: anything uncertain is NOT negated.
         """
-        # Normalize Unicode apostrophes to standard ASCII apostrophe
-        text = text.replace("'", "'").replace("'", "'").replace("'", "'")
-        text = text.replace("`", "'")
+        preceding = _TOKEN_RE.findall(clause[:match_start])
+        return any(token in _NEGATION_CUES for token in preceding[-_NEGATION_WINDOW:])
 
-        # Expand common contractions for negation detection
-        contractions = {
-            "don't": "do not",
-            "doesn't": "does not",
-            "didn't": "did not",
-            "won't": "will not",
-            "can't": "cannot",
-            "couldn't": "could not",
-            "shouldn't": "should not",
-            "wouldn't": "would not",
-            "isn't": "is not",
-            "aren't": "are not",
-            "wasn't": "was not",
-            "weren't": "were not",
-            "haven't": "have not",
-            "hasn't": "has not",
-            "hadn't": "had not",
-            "i'm": "i am",
-            "it's": "it is",
-            "that's": "that is",
-        }
-
-        for contraction, expansion in contractions.items():
-            text = text.replace(contraction, expansion)
-
-        return text.lower()
+    @staticmethod
+    def _clauses(request: SymptomRequest) -> List[str]:
+        """
+        Normalize each form field separately and split it into clauses, so a negation
+        in one field or clause can never suppress a symptom in another.
+        """
+        fields = [
+            request.main_symptom,
+            request.duration,
+            request.onset,
+            request.severity,
+            *request.associated_symptoms,
+            *request.warning_signs,
+            request.additional_context or "",
+        ]
+        clauses: List[str] = []
+        for field in fields:
+            for line in field.splitlines():
+                for clause in _CLAUSE_SPLIT_RE.split(_normalize(line)):
+                    clause = clause.strip()
+                    if clause:
+                        clauses.append(clause)
+        return clauses
 
     @classmethod
-    def _is_negated(cls, text: str, symptom: str, match_start: int) -> bool:
-        """
-        Check if a symptom occurrence is negated.
-
-        This is a conservative phrase-boundary check, not full NLP.
-        Looks for negation words within a small window before the symptom.
-
-        Returns True if the symptom appears to be negated.
-        """
-        # Get the text before the match
-        preceding_text = text[:match_start].strip()
-
-        # Check for negation words in the last 50 characters before the match
-        window = preceding_text[-50:] if len(preceding_text) > 50 else preceding_text
-
-        # Remove trailing spaces from window for matching
-        window_stripped = window.rstrip()
-
-        negation_words = [
-            "no", "not", "never", "without", "none",
-            "do not", "does not", "did not", "cannot",
-            "will not", "could not", "should not", "would not",
-            "is not", "are not", "was not", "were not",
-            "have not", "has not", "had not",
-        ]
-
-        # Check if the window ends with a negation word (with or without space)
-        for neg in negation_words:
-            # Check if window ends with the negation word
-            if window_stripped.endswith(neg):
-                return True
-            # Check if negation word is in window with a space after
-            if f"{neg} " in window:
-                return True
-
-        return False
+    def _find_signs(cls, matchers: Tuple[_Matcher, ...], clauses: List[str]) -> List[WarningSign]:
+        """Return each sign that has at least one non-negated occurrence."""
+        found: List[WarningSign] = []
+        for sign, rule, pattern in matchers:
+            for clause in clauses:
+                if any(not cls._is_negated(clause, m.start()) for m in pattern.finditer(clause)):
+                    found.append(
+                        WarningSign(
+                            sign=sign,
+                            description=rule["description"],
+                            source=rule["source"],
+                        )
+                    )
+                    break  # report each sign once
+        return found
 
     @classmethod
     def evaluate(cls, request: SymptomRequest) -> Tuple[UrgencyLevel, List[WarningSign]]:
@@ -283,82 +343,15 @@ class TriageEngine:
         Returns:
             Tuple of (urgency_level, list of triggered warning signs)
         """
-        # Normalize and combine all text
-        all_text = " ".join([
-            request.main_symptom,
-            request.duration,
-            request.onset,
-            request.severity,
-            " ".join(request.associated_symptoms),
-            " ".join(request.warning_signs),
-            (request.additional_context or ""),
-        ])
+        clauses = cls._clauses(request)
 
-        normalized_text = cls._normalize_text(all_text)
+        emergency_signs = cls._find_signs(cls._EMERGENCY_MATCHERS, clauses)
+        if emergency_signs:
+            return UrgencyLevel.EMERGENCY, emergency_signs
 
-        detected_signs = []
-
-        # Check emergency rules first
-        for rule_name, rule in cls.EMERGENCY_RULES.items():
-            for sign in rule["signs"]:
-                normalized_sign = cls._normalize_text(sign)
-
-                # Find all occurrences of the sign
-                start = 0
-                sign_detected = False
-
-                while True:
-                    match_start = normalized_text.find(normalized_sign, start)
-                    if match_start == -1:
-                        break
-
-                    # Check if this occurrence is negated
-                    if not cls._is_negated(normalized_text, normalized_sign, match_start):
-                        # Non-negated occurrence found
-                        detected_signs.append(WarningSign(
-                            sign=sign,
-                            description=rule["description"],
-                            source=rule["source"]
-                        ))
-                        sign_detected = True
-                        break  # Only add once per sign
-
-                    start = match_start + 1
-
-        # If any emergency signs detected, return emergency
-        if detected_signs:
-            return UrgencyLevel.EMERGENCY, detected_signs
-
-        # Check urgent rules
-        for rule_name, rule in cls.URGENT_RULES.items():
-            for sign in rule["signs"]:
-                normalized_sign = cls._normalize_text(sign)
-
-                # Find all occurrences of the sign
-                start = 0
-                sign_detected = False
-
-                while True:
-                    match_start = normalized_text.find(normalized_sign, start)
-                    if match_start == -1:
-                        break
-
-                    # Check if this occurrence is negated
-                    if not cls._is_negated(normalized_text, normalized_sign, match_start):
-                        # Non-negated occurrence found
-                        detected_signs.append(WarningSign(
-                            sign=sign,
-                            description=rule["description"],
-                            source=rule["source"]
-                        ))
-                        sign_detected = True
-                        break  # Only add once per sign
-
-                    start = match_start + 1
-
-        # If urgent signs detected, return urgent
-        if detected_signs:
-            return UrgencyLevel.URGENT, detected_signs
+        urgent_signs = cls._find_signs(cls._URGENT_MATCHERS, clauses)
+        if urgent_signs:
+            return UrgencyLevel.URGENT, urgent_signs
 
         # If insufficient information, return unknown
         if not request.main_symptom or len(request.main_symptom) < 3:
