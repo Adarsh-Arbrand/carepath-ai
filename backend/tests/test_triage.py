@@ -146,6 +146,109 @@ class TestTriageEngine:
         assert urgency == UrgencyLevel.EMERGENCY
         assert len(signs) > 0
 
+    def test_emergency_coughing_blood(self):
+        """Test that coughing blood triggers emergency."""
+        request = SymptomRequest(
+            age_group=AgeGroup.ADULT,
+            main_symptom="coughing",
+            duration="1 hour",
+            onset="sudden",
+            severity="severe",
+            warning_signs=["coughing blood"],
+        )
+        urgency, signs = TriageEngine.evaluate(request)
+        assert urgency == UrgencyLevel.EMERGENCY
+        assert len(signs) > 0
+        assert any("blood" in sign.sign.lower() for sign in signs)
+
+    def test_emergency_overdose(self):
+        """Test that overdose triggers emergency."""
+        request = SymptomRequest(
+            age_group=AgeGroup.ADULT,
+            main_symptom="took too many pills",
+            duration="30 minutes",
+            onset="sudden",
+            severity="severe",
+        )
+        urgency, signs = TriageEngine.evaluate(request)
+        assert urgency == UrgencyLevel.EMERGENCY
+        assert len(signs) > 0
+
+    def test_emergency_severe_chest_pain(self):
+        """Test that severe chest pain triggers emergency (regression test)."""
+        request = SymptomRequest(
+            age_group=AgeGroup.ADULT,
+            main_symptom="severe chest pain",
+            duration="30 minutes",
+            onset="sudden",
+            severity="severe",
+        )
+        urgency, signs = TriageEngine.evaluate(request)
+        assert urgency == UrgencyLevel.EMERGENCY
+        assert len(signs) > 0
+        assert any("chest" in sign.sign.lower() for sign in signs)
+
+    def test_negated_symptoms_no_false_positive(self):
+        """Test that negated symptoms don't trigger false positives."""
+        request = SymptomRequest(
+            age_group=AgeGroup.ADULT,
+            main_symptom="mild discomfort",
+            duration="2 hours",
+            onset="gradual",
+            severity="mild",
+            additional_context="no chest pain, no difficulty breathing",
+        )
+        urgency, signs = TriageEngine.evaluate(request)
+        # Should not be emergency since symptoms are negated
+        assert urgency != UrgencyLevel.EMERGENCY
+        # Should have no emergency warning signs
+        assert not any("chest" in sign.sign.lower() or "breathing" in sign.sign.lower() for sign in signs)
+
+    def test_negated_with_contractions(self):
+        """Test that negated symptoms with contractions don't trigger false positives."""
+        request = SymptomRequest(
+            age_group=AgeGroup.ADULT,
+            main_symptom="mild headache",
+            duration="1 hour",
+            onset="gradual",
+            severity="mild",
+            additional_context="I don't have chest pain and I'm not experiencing difficulty breathing",
+        )
+        urgency, signs = TriageEngine.evaluate(request)
+        # Should not be emergency since symptoms are negated
+        assert urgency != UrgencyLevel.EMERGENCY
+        assert not any("chest" in sign.sign.lower() or "breathing" in sign.sign.lower() for sign in signs)
+
+    def test_negated_variations(self):
+        """Test various negation patterns."""
+        request = SymptomRequest(
+            age_group=AgeGroup.ADULT,
+            main_symptom="sore throat",
+            duration="2 days",
+            onset="gradual",
+            severity="mild",
+            additional_context="never had chest pain, no breathing issues",
+        )
+        urgency, signs = TriageEngine.evaluate(request)
+        # Should not be emergency since symptoms are negated
+        assert urgency != UrgencyLevel.EMERGENCY
+        assert not any("chest" in sign.sign.lower() or "breathing" in sign.sign.lower() for sign in signs)
+
+    def test_genuine_symptom_not_suppressed_by_negation_elsewhere(self):
+        """Test that genuine emergency symptoms are not suppressed by negations elsewhere."""
+        request = SymptomRequest(
+            age_group=AgeGroup.ADULT,
+            main_symptom="severe chest pain",
+            duration="30 minutes",
+            onset="sudden",
+            severity="severe",
+            additional_context="no fever, no headache",
+        )
+        urgency, signs = TriageEngine.evaluate(request)
+        # Should be emergency due to genuine chest pain in main symptom
+        assert urgency == UrgencyLevel.EMERGENCY
+        assert any("chest" in sign.sign.lower() for sign in signs)
+
     def test_urgent_persistent_fever(self):
         """Test that persistent fever triggers urgent (not emergency)."""
         request = SymptomRequest(

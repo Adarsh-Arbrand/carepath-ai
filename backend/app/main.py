@@ -286,8 +286,22 @@ if os.path.exists(frontend_build_path):
 
     @app.get("/{path:path}")
     async def catch_all(path: str):
-        file_path = os.path.join(frontend_build_path, path)
-        if os.path.exists(file_path):
+        # Prevent path traversal attacks
+        # Normalize the path and ensure it stays within frontend_build_path
+        normalized_path = os.path.normpath(path)
+        if normalized_path.startswith("..") or os.path.isabs(normalized_path):
+            # Reject path traversal attempts
+            return FileResponse(os.path.join(frontend_build_path, "index.html"))
+
+        file_path = os.path.join(frontend_build_path, normalized_path)
+        # Ensure the resolved path is still within frontend_build_path
+        real_path = os.path.realpath(file_path)
+        real_build_path = os.path.realpath(frontend_build_path)
+        if not real_path.startswith(real_build_path):
+            # Reject path traversal attempts
+            return FileResponse(os.path.join(frontend_build_path, "index.html"))
+
+        if os.path.exists(file_path) and os.path.isfile(file_path):
             return FileResponse(file_path)
         return FileResponse(os.path.join(frontend_build_path, "index.html"))
 

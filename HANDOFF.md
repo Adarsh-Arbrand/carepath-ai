@@ -2,7 +2,7 @@
 
 **Hackathon:** Hack2Skill PromptWars × HackWkie AI Code Submission
 **Date:** October 14, 2026
-**Status:** Ready for public GitHub and deployment
+**Status:** Phase 1 Complete - Safety and Security Improvements Verified
 
 ---
 
@@ -54,7 +54,12 @@ CarePath AI is an intelligent healthcare navigation assistant that provides safe
 ### ✅ Implemented Features
 
 **Backend:**
-- Deterministic Safety Engine with 10 emergency rules and 4 urgent rules
+- Deterministic Safety Engine with 12 emergency rules and 4 urgent rules
+  - Added: coughing blood, overdose (new emergency rules)
+  - Enhanced: breathing difficulty (3 additional signs), suicidal thoughts (2 additional signs)
+- Negation handling to prevent false positives (phrase-boundary check, not full NLP)
+  - Handles "no chest pain", "not experiencing", contractions like "don't have"
+  - Conservative approach: genuine symptoms not suppressed by negations elsewhere
 - AI Service abstraction supporting Google Gemini API
 - Demo mode fallback when AI unavailable
 - API endpoints: `/api/health`, `/api/config`, `/api/assess`, `/api/follow-up`
@@ -85,17 +90,21 @@ CarePath AI is an intelligent healthcare navigation assistant that provides safe
 
 ### ✅ Test Results
 
-**Backend Tests:** 47/47 PASSED (0.79s)
+**Backend Tests:** 55/55 PASSED (1.00s)
 - 9 AI service tests
-- 15 API endpoint tests
-- 23 triage engine tests
+- 16 API endpoint tests (added safety precedence test)
+- 30 triage engine tests (added negation handling tests)
+  - 12 emergency rule tests
+  - 4 urgent condition tests
+  - 4 negation handling tests
+  - 10 other tests
 
-**Frontend Tests:** 25/25 PASSED (4.26s)
+**Frontend Tests:** 25/25 PASSED (4.39s)
 - 15 Results component tests
 - 10 Questionnaire component tests
 
 **Production Build:** SUCCESS
-- Build time: 362ms
+- Build time: 583ms
 - CSS: 18.11 kB (gzipped: 4.29 kB)
 - JS: 247.74 kB (gzipped: 75.15 kB)
 
@@ -109,11 +118,12 @@ CarePath AI is an intelligent healthcare navigation assistant that provides safe
 - ✅ API key removed from `.env` (now empty for security)
 
 **Safety Rules Cannot Be Overridden:**
-- ✅ Safety engine runs BEFORE AI in `main.py` (line 139)
+- ✅ Safety engine runs BEFORE AI in `main.py` (line 141)
 - ✅ Safety urgency determined independently
 - ✅ AI only provides explanatory context, never changes urgency
 - ✅ AI system prompt explicitly states urgency must be respected
 - ✅ Test `test_cannot_downgrade_safety` confirms architecture
+- ✅ Test `test_safety_engine_precedence_over_ai` asserts actual returned classification
 
 **No Committed Secrets/Artifacts:**
 - ✅ `.env` excluded from Git (verified with `git check-ignore`)
@@ -123,10 +133,18 @@ CarePath AI is an intelligent healthcare navigation assistant that provides safe
 - ✅ `.gitignore` properly configured
 
 **Emergency-Rule Precedence:**
-- ✅ Emergency rules checked first (lines 195-207 in triage.py)
+- ✅ Emergency rules checked first (lines 302-330 in triage.py)
 - ✅ If any emergency sign detected, immediately returns EMERGENCY
-- ✅ Urgent rules checked only if no emergency signs (lines 209-221)
+- ✅ Urgent rules checked only if no emergency signs (lines 332-361)
 - ✅ Emergency rules cannot be overridden by urgent rules
+
+**Negation Handling:**
+- ✅ Phrase-boundary negation detection prevents false positives
+- ✅ Handles "no chest pain", "not experiencing", contractions
+- ✅ Unicode apostrophe normalization
+- ✅ Genuine symptoms not suppressed by negations elsewhere
+- ✅ Conservative approach with 50-character window check
+- ⚠️ Not full NLP - may miss complex negation patterns
 
 **Input Validation:**
 - ✅ Pydantic models with Field validators
@@ -148,12 +166,25 @@ CarePath AI is an intelligent healthcare navigation assistant that provides safe
 - ✅ Rate limiting returns 429 when exceeded
 - ⚠️ Using `print()` for logging (documented for production upgrade)
 
+**Docker Configuration:**
+- ✅ Multi-stage Dockerfile with frontend build
+- ✅ Uses `requirements.lock` for reproducible Python builds
+- ✅ Uses `package-lock.json` for reproducible Node builds
+- ✅ Frontend build uses `npm ci --omit=dev` for production
+- ✅ Health check endpoint configured
+- ⚠️ Docker build not verified (Docker unavailable in environment)
+
 ---
 
 ## Remaining Bugs & Known Limitations
 
 ### Critical Issues (RESOLVED)
 - ✅ **RESOLVED:** Real API key was in `.env` - removed and replaced with empty string
+- ✅ **RESOLVED:** Negated symptoms causing false positives - added phrase-boundary negation detection
+- ✅ **RESOLVED:** Missing emergency rules for coughing blood and overdose - added
+- ✅ **RESOLVED:** Insufficient breathing difficulty signs - added 3 additional signs
+- ✅ **RESOLVED:** Insufficient suicidal ideation signs - added 2 additional signs
+- ✅ **RESOLVED:** No test asserting actual returned safety classification - added test
 
 ### High Priority (Recommended for Production)
 1. **Deprecated Google Gemini package**

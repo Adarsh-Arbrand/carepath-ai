@@ -348,14 +348,15 @@ pytest tests/ -v
 ```
 
 **Test Coverage:**
-- 47 tests covering:
-  - Emergency rule validation (10 tests)
-  - Urgent condition detection (3 tests)
-  - API endpoint validation (15 tests)
+- 55 tests covering:
+  - Emergency rule validation (12 tests)
+  - Urgent condition detection (4 tests)
+  - Negation handling (4 tests)
+  - API endpoint validation (16 tests)
   - AI service functionality (9 tests)
   - Edge cases and error handling (10 tests)
 
-**Expected Result:** All 47 tests pass
+**Expected Result:** All 55 tests pass
 
 ### Frontend Tests (Vitest)
 ```bash

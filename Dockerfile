@@ -5,7 +5,7 @@ FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
 
 COPY frontend/package*.json ./
-RUN npm ci
+RUN npm ci --omit=dev
 
 COPY frontend/ ./
 RUN npm run build
@@ -15,8 +15,8 @@ FROM python:3.11-slim AS backend-builder
 
 WORKDIR /app
 
-COPY backend/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+COPY backend/requirements.lock ./
+RUN pip install --no-cache-dir -r requirements.lock
 
 COPY backend/ ./
 
@@ -29,8 +29,8 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install only runtime dependencies
-COPY backend/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+COPY backend/requirements.lock ./
+RUN pip install --no-cache-dir -r requirements.lock
 
 # Copy backend code
 COPY backend/ ./

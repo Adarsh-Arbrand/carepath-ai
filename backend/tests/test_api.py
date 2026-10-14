@@ -240,6 +240,28 @@ class TestAssessEndpoint:
         # This test verifies the endpoint works, not the rate limit enforcement
         assert len(responses) == 15
 
+    def test_safety_engine_precedence_over_ai(self):
+        """Test that safety engine classification cannot be downgraded by AI."""
+        # Test with emergency symptom - safety engine should determine emergency
+        request_data = {
+            "age_group": "18-64",
+            "main_symptom": "severe chest pain",
+            "duration": "30 minutes",
+            "onset": "sudden",
+            "severity": "severe",
+            "associated_symptoms": [],
+            "warning_signs": [],
+            "additional_context": None,
+        }
+        response = client.post("/api/assess", json=request_data)
+        assert response.status_code == 200
+        data = response.json()
+        # The returned urgency MUST be emergency, regardless of AI output
+        assert data["urgency"] == "emergency"
+        assert len(data["warning_signs_detected"]) > 0
+        # Verify emergency number is in next steps
+        assert any("112" in step for step in data["recommended_next_steps"])
+
 
 class TestFollowUpEndpoint:
     """Test follow-up endpoint."""
