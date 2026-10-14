@@ -43,12 +43,16 @@ app = FastAPI(
 )
 
 # CORS middleware
-# NOTE: allow_origins=["*"] is for development/demo only.
-# For production deployment, restrict to specific domains.
+# Configure allowed origins via ALLOWED_ORIGINS environment variable
+# Format: comma-separated list of origins, e.g., "https://example.com,http://localhost:5173"
+# If not set, defaults to localhost for development
+allowed_origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:8000")
+allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
-    allow_credentials=True,
+    allow_origins=allowed_origins,
+    allow_credentials=False,  # No authentication/cookies in this app
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
