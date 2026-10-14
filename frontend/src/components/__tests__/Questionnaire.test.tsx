@@ -2,7 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { Questionnaire } from '../Questionnaire';
-import { SymptomRequest } from '../../types';
+import type { SymptomRequest } from '../../types';
 
 describe('Questionnaire', () => {
   const mockOnSubmit = vi.fn();

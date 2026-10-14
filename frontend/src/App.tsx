@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Disclaimer } from './components/Disclaimer';
 import { Questionnaire } from './components/Questionnaire';
 import { Results } from './components/Results';
-import { SymptomRequest, AssessmentResponse } from './types';
+import type { SymptomRequest, AssessmentResponse } from './types';
 import { assessSymptoms } from './api';
 
 type ViewState = 'landing' | 'questionnaire' | 'results' | 'about' | 'privacy';

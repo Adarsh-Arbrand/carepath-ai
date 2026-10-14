@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { Results } from '../Results';
-import { AssessmentResponse } from '../../types';
+import type { AssessmentResponse } from '../../types';
 
 describe('Results', () => {
   const mockOnReset = vi.fn();

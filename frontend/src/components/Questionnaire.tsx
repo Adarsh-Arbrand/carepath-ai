@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AgeGroup, SymptomRequest } from '../types';
+import type { AgeGroup, SymptomRequest } from '../types';
 
 interface QuestionnaireProps {
   onSubmit: (data: SymptomRequest) => void;

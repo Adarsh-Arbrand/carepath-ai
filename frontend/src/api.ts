@@ -1,4 +1,4 @@
-import { SymptomRequest, AssessmentResponse, ConfigResponse } from './types';
+import type { SymptomRequest, AssessmentResponse, ConfigResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 

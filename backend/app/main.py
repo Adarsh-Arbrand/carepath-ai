@@ -43,6 +43,8 @@ app = FastAPI(
 )
 
 # CORS middleware
+# NOTE: allow_origins=["*"] is for development/demo only.
+# For production deployment, restrict to specific domains.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Configure appropriately for production
@@ -94,7 +96,7 @@ async def validation_exception_handler(request: Request, exc: ValidationError):
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     """Handle general exceptions."""
-    # Log error in production
+    # NOTE: Using print for demo. Production should use proper logging (e.g., logging module)
     print(f"Unexpected error: {exc}")
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

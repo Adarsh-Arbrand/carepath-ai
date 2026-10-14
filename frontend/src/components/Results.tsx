@@ -1,4 +1,4 @@
-import { AssessmentResponse } from '../types';
+import type { AssessmentResponse } from '../types';
 
 interface ResultsProps {
   response: AssessmentResponse;
