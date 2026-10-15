@@ -8,3 +8,5 @@ services:
     envVars:
       - key: PORT
         value: 8000
+      - key: GEMINI_MODEL
+        value: gemini-3.8-flash

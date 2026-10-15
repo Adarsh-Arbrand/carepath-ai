@@ -134,7 +134,7 @@ CarePath AI works fully in demo mode without any AI provider. When configured, A
 4. Set environment variable:
    ```bash
    export GEMINI_API_KEY=your_api_key_here
-   export GEMINI_MODEL=gemini-1.5-flash  # Optional, defaults to gemini-1.5-flash
+   export GEMINI_MODEL=gemini-3.8-flash  # Optional, defaults to gemini-3.8-flash
    export AI_TIMEOUT=30  # Optional, defaults to 30 seconds
    ```
 
@@ -253,7 +253,7 @@ When no API key is configured, the system operates in demo mode with:
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `GEMINI_API_KEY` | No | - | Google Gemini API key for AI features |
-| `GEMINI_MODEL` | No | `gemini-1.5-flash` | Gemini model to use |
+| `GEMINI_MODEL` | No | `gemini-3.8-flash` | Gemini model to use |
 | `AI_TIMEOUT` | No | `30` | AI request timeout in seconds |
 | `PORT` | No | `8000` | Server port |
 
@@ -403,7 +403,7 @@ mypy app/  # Optional
    ```bash
    gcloud run services update carepath-ai \
      --region us-central1 \
-     --set-env-vars="GEMINI_API_KEY=your_key,GEMINI_MODEL=gemini-1.5-flash"
+     --set-env-vars="GEMINI_API_KEY=your_key,GEMINI_MODEL=gemini-3.8-flash"
    ```
 
 #### Option 2: Using Docker

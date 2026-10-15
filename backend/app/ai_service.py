@@ -52,7 +52,7 @@ class AIService:
 
     def __init__(self):
         self.api_key = os.getenv("GEMINI_API_KEY")
-        self.model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+        self.model_name = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
         self.enabled = bool(self.api_key)
         self.timeout = _read_timeout_seconds()
 

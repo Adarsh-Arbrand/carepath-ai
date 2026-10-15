@@ -176,3 +176,41 @@ class TestAIService:
             assert len(explanation.general_possibilities) > 0
             assert len(explanation.additional_context_needed) > 0
             assert len(explanation.professional_considerations) > 0
+
+    def test_default_model_name(self):
+        """Test that default model name is gemini-3.8-flash."""
+        with patch.dict("os.environ", {}, clear=True):
+            service = AIService()
+            assert service.model_name == "gemini-3.8-flash"
+
+    def test_model_name_env_override(self):
+        """Test that GEMINI_MODEL env var overrides default model name."""
+        with patch.dict("os.environ", {"GEMINI_MODEL": "custom-flash-model"}, clear=True):
+            service = AIService()
+            assert service.model_name == "custom-flash-model"
+
+    @patch("app.ai_service.genai")
+    def test_model_failure_not_found_fallback_preserves_urgency(self, mock_genai):
+        """Test that model 404 NotFound error falls back to demo mode while preserving emergency urgency."""
+        mock_model = Mock()
+        mock_model.generate_content.side_effect = Exception("404 models/gemini-1.5-flash is not found for API version v1beta")
+        mock_genai.configure.return_value = None
+        mock_genai.GenerativeModel.return_value = mock_model
+        mock_genai.types.GenerationConfig = Mock
+
+        with patch.dict("os.environ", {"GEMINI_API_KEY": "test-key"}):
+            service = AIService()
+            request = SymptomRequest(
+                age_group=AgeGroup.ADULT,
+                main_symptom="chest pain",
+                duration="1 hour",
+                onset="sudden",
+                severity="severe",
+            )
+            explanation, is_demo = service.get_explanation(
+                request, UrgencyLevel.EMERGENCY, "Emergency warning signs"
+            )
+            assert is_demo is True
+            assert isinstance(explanation, AIExplanation)
+            assert any("emergency" in c.lower() for c in explanation.professional_considerations)
+            assert not any("heart attack" in p.lower() or "myocardial" in p.lower() for p in explanation.general_possibilities)
