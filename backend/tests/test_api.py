@@ -405,6 +405,60 @@ class TestAssessEndpoint:
             assert "Physical examination" in steps_text
             assert "aspirin" not in steps_text.lower()
 
+    def test_audit_thinking_of_ending_my_life_crisis_guidance(self):
+        """Audit regression: 'thinking of ending my life' must receive Tele-MANAS crisis guidance, not cardiac driving steps."""
+        request_data = {
+            "age_group": "18-64",
+            "main_symptom": "thinking of ending my life",
+            "duration": "1 day",
+            "onset": "sudden",
+            "severity": "severe",
+        }
+        response = client.post("/api/assess", json=request_data)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["urgency"] == "emergency"
+        steps_text = " ".join(data["recommended_next_steps"])
+        assert "Tele-MANAS" in steps_text or "14416" in steps_text
+        assert "drive yourself" not in steps_text.lower()
+
+    def test_audit_overdosing_guidance(self):
+        """Audit regression: 'overdosing' must receive overdose/poison guidance, not cardiac driving steps."""
+        request_data = {
+            "age_group": "18-64",
+            "main_symptom": "overdosing",
+            "duration": "30 minutes",
+            "onset": "sudden",
+            "severity": "severe",
+        }
+        response = client.post("/api/assess", json=request_data)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["urgency"] == "emergency"
+        steps_text = " ".join(data["recommended_next_steps"])
+        assert "vomiting" in steps_text.lower() or "packaging" in steps_text.lower() or "poison" in steps_text.lower()
+        assert "drive yourself" not in steps_text.lower()
+
+    def test_audit_took_all_pills_and_want_to_die_dual_guidance(self):
+        """Audit regression: 'I took all my pills and I want to die' must provide BOTH crisis helpline and overdose instructions."""
+        request_data = {
+            "age_group": "18-64",
+            "main_symptom": "I took all my pills and I want to die",
+            "duration": "20 minutes",
+            "onset": "sudden",
+            "severity": "severe",
+        }
+        response = client.post("/api/assess", json=request_data)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["urgency"] == "emergency"
+        steps_text = " ".join(data["recommended_next_steps"])
+        # Must contain crisis guidance
+        assert "Tele-MANAS" in steps_text or "14416" in steps_text
+        # Must contain overdose safety guidance
+        assert "vomiting" in steps_text.lower() or "packaging" in steps_text.lower()
+        assert "drive yourself" not in steps_text.lower()
+
 
 class TestFollowUpEndpoint:
     """Test follow-up endpoint."""

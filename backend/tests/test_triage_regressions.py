@@ -465,3 +465,75 @@ class TestSuicideAndOverdoseDetection:
             assert urgency == EMERGENCY, phrase
             assert any("seiz" in s.sign or "fit" in s.sign or "shak" in s.sign or "jerk" in s.sign or "mal" in s.sign for s in signs), phrase
 
+
+class TestAuditRegressionCases:
+    """
+    Direct regression tests for independent audit findings, testing each exact
+    failure case alongside its genuine negative counterpart.
+    """
+
+    def test_inhaler_not_working_i_cant_breathe_is_emergency(self):
+        urgency, signs = assess("inhaler not working i cant breathe")
+        assert urgency == EMERGENCY
+        assert any("breathe" in s.sign for s in signs)
+
+    def test_inhaler_worked_genuine_negative_is_routine(self):
+        urgency, _ = assess("inhaler worked and no breathing difficulty", severity="mild")
+        assert urgency == ROUTINE
+
+    def test_medicine_is_not_helping_chest_pain_is_emergency(self):
+        urgency, signs = assess("the medicine isn't helping my chest pain")
+        assert urgency == EMERGENCY
+        assert any("chest pain" in s.sign for s in signs)
+
+    def test_medicine_helped_genuine_negative_is_routine(self):
+        urgency, _ = assess("the medicine helped, no chest pain now", severity="mild")
+        assert urgency == ROUTINE
+
+    def test_not_ok_took_all_my_pills_is_emergency(self):
+        urgency, signs = assess("I am not ok I took all my pills")
+        assert urgency == EMERGENCY
+        assert any("pill" in s.sign for s in signs)
+
+    def test_ok_did_not_take_pills_genuine_negative_is_routine(self):
+        urgency, _ = assess("I am ok, did not take all my pills", severity="mild")
+        assert urgency == ROUTINE
+
+    def test_never_had_chest_pain_until_today_is_emergency(self):
+        urgency, signs = assess("never had chest pain until today")
+        assert urgency == EMERGENCY
+        assert any("chest pain" in s.sign for s in signs)
+
+    def test_never_had_chest_pain_historical_negation_is_routine(self):
+        urgency, _ = assess("never had chest pain", severity="mild")
+        assert urgency == ROUTINE
+
+    def test_thinking_of_ending_my_life_is_emergency(self):
+        urgency, signs = assess("thinking of ending my life")
+        assert urgency == EMERGENCY
+        assert any("life" in s.sign or "die" in s.sign or "suicid" in s.sign for s in signs)
+
+    def test_not_thinking_of_ending_my_life_is_routine(self):
+        urgency, _ = assess("not thinking of ending my life", severity="mild")
+        assert urgency == ROUTINE
+
+    def test_overdosing_is_emergency(self):
+        urgency, signs = assess("overdosing")
+        assert urgency == EMERGENCY
+        assert any("overdos" in s.sign for s in signs)
+
+    def test_not_overdosing_is_routine(self):
+        urgency, _ = assess("not overdosing", severity="mild")
+        assert urgency == ROUTINE
+
+    def test_took_all_pills_and_want_to_die_triggers_both_emergency_signs(self):
+        urgency, signs = assess("I took all my pills and I want to die")
+        assert urgency == EMERGENCY
+        has_crisis = any("die" in s.sign or "suicid" in s.sign for s in signs)
+        has_overdose = any("pill" in s.sign or "overdos" in s.sign for s in signs)
+        assert has_crisis, "Crisis sign must be detected"
+        assert has_overdose, "Overdose sign must be detected"
+
+    def test_did_not_take_pills_and_do_not_want_to_die_is_routine(self):
+        urgency, _ = assess("did not take my pills and do not want to die", severity="mild")
+        assert urgency == ROUTINE

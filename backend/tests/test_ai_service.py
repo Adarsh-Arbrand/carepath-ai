@@ -310,3 +310,29 @@ class TestAIService:
             assert not any("ambulance" in c.lower() for c in explanation.professional_considerations)
             assert not any("aspirin" in c.lower() for c in explanation.professional_considerations)
 
+    def test_audit_unsafe_statements_are_filtered(self):
+        """Regression test for audit findings: unsafe false reassurance and hospital avoidance are blocked."""
+        with patch.dict("os.environ", {}, clear=True):
+            service = AIService()
+            text = """
+            General possibilities:
+            - probably nothing serious, you can safely wait
+            - You don't need to go to the hospital
+            - Viral syndrome
+
+            Additional context needed:
+            - Temperature readings
+
+            Professional considerations:
+            - Review of symptoms
+            - No need to see a doctor
+            - You can safely wait a few days
+            """
+            explanation = service._parse_llm_response(text)
+            assert "Viral syndrome" in explanation.general_possibilities
+            assert not any("nothing serious" in p.lower() for p in explanation.general_possibilities)
+            assert not any("safely wait" in p.lower() for p in explanation.general_possibilities)
+            assert not any("hospital" in p.lower() for p in explanation.general_possibilities)
+            assert not any("see a doctor" in c.lower() for c in explanation.professional_considerations)
+            assert not any("safely wait" in c.lower() for c in explanation.professional_considerations)
+            assert "Review of symptoms" in explanation.professional_considerations

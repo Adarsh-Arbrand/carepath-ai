@@ -158,15 +158,30 @@ async def assess_symptoms(request: Request, data: SymptomRequest):
     # P0-D: Return deterministic emergency result immediately WITHOUT invoking or waiting for AI service
     if safety_urgency == UrgencyLevel.EMERGENCY:
         is_crisis = any(
-            any(k in ws.sign for k in ("suicid", "die", "dead", "live", "self harm", "hurt myself", "harming myself", "kill myself", "end my life", "take my own life"))
+            ("suicidal" in ws.description.lower() or "crisis" in ws.description.lower() or "self-harm" in ws.description.lower())
+            or any(k in ws.sign for k in ("suicid", "die", "dead", "live", "self harm", "hurt myself", "harming myself", "kill myself", "end my life", "ending my life", "take my own life"))
             for ws in warning_signs
         )
         is_overdose = any(
-            any(k in ws.sign for k in ("overdose", "pill", "poison", "bottle", "bleach", "chemical"))
+            ("overdose" in ws.description.lower() or "poison" in ws.description.lower() or "chemical ingestion" in ws.description.lower())
+            or any(k in ws.sign for k in ("overdos", "pill", "poison", "bottle", "bleach", "chemical"))
             for ws in warning_signs
         )
 
-        if is_crisis:
+        if is_crisis and is_overdose:
+            next_steps = [
+                f"Contact emergency services immediately ({emergency_number}) or call the Tele-MANAS mental health helpline (14416 / 1800-891-4416)",
+                "Do not induce vomiting unless explicitly directed by a poison control or medical professional",
+                "If safe to do so, locate and retain the medication packaging, bottle, or substance for emergency responders",
+                "Stay with someone you trust - do not remain alone",
+                "If the person is unconscious, having difficulty breathing, or having a seizure, place them in the recovery position and call emergency services immediately",
+            ]
+            reasoning = (
+                safety_reasoning
+                + "\n\n"
+                + "Recommended action: Immediate crisis intervention and emergency medical evaluation for suspected overdose are required right now."
+            )
+        elif is_crisis:
             next_steps = [
                 f"Contact emergency services immediately ({emergency_number}) or call the Tele-MANAS mental health helpline (14416 / 1800-891-4416)",
                 "Stay with someone you trust - do not remain alone",

@@ -85,7 +85,8 @@ _NON_NEGATING_INTERVENING = re.compile(
     r"better\b|"
     r"only\b|"
     r"just\b|"
-    r"(?:able\s+to\s+|unable\s+to\s+)?(?:stop|control|manage|help)\b|"
+    r"(?:able\s+to\s+|unable\s+to\s+)?(?:stop(?:ping|ped)?|control(?:ling|led)?|manage(?:d|ing)?|help(?:ing|ed)?|work(?:ing|ed)?|reliev(?:e|ed|ing)|respond(?:ing|ed)?)\b|"
+    r"(?:ok|okay|fine|well|good|right|feeling\s+well|feeling\s+good|doing\s+well)\b|"
     r"go\s+away\b"
     r")",
     re.IGNORECASE,
@@ -94,6 +95,13 @@ _NON_NEGATING_INTERVENING = re.compile(
 # Intensifier phrases following a symptom (e.g. "never had chest pain this bad")
 _INTENSIFIER_FOLLOWING = re.compile(
     r"\b(?:this|so)\s+(?:bad|severe|intense|terrible|awful|worse)\b|\blike\s+this\b",
+    re.IGNORECASE,
+)
+
+# Temporal phrases asserting present occurrence despite historical negation (e.g. "never had chest pain until today")
+_TEMPORAL_PRESENT_MARKER = re.compile(
+    r"\b(?:until|till)\s+(?:today|now|recently|this|tonight)\b|"
+    r"\bbefore\s+(?:today|now)\b",
     re.IGNORECASE,
 )
 
@@ -463,8 +471,11 @@ class TriageEngine:
             return False
 
         # Check for intensifier following the symptom (e.g. "never had ... this bad/severe/like this")
-        if "never" in negation_cues_found and _INTENSIFIER_FOLLOWING.search(following_text):
-            return False
+        if "never" in negation_cues_found:
+            if _INTENSIFIER_FOLLOWING.search(following_text):
+                return False
+            if _TEMPORAL_PRESENT_MARKER.search(following_text) or _TEMPORAL_PRESENT_MARKER.search(preceding_text):
+                return False
 
         return True
 

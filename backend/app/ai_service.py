@@ -26,10 +26,17 @@ DEFAULT_AI_TIMEOUT_SECONDS = 30
 _LIST_ITEM_RE = re.compile(r"^(?:[-*•]|\d+[\.\)])\s*(.+)$")
 
 _UNSAFE_AI_CONTENT_RE = re.compile(
-    r"(?i)\b(?:do\s+not|don't|no\s+need\s+to|never)\s+(?:call|contact|go\s+to)\s+(?:an?\s+)?(?:ambulance|emergency|hospital|er|112|911)\b"
+    r"(?i)\b(?:do\s+not|don't|never|no)\s+(?:need\s+to\s+|have\s+to\s+)?(?:call|contact|go\s+to|visit|seek)\s+(?:an?\s+|the\s+)?(?:ambulance|emergency|hospital|er|doctor|clinic|112|911)\b"
+    r"|\bno\s+need\s+(?:to\s+)?(?:call|contact|go\s+to|visit|seek|worry|see\s+a\s+doctor)\b"
+    r"|\b(?:avoid|skip|delay)\s+(?:calling|going\s+to|visiting|seeking)?\s*(?:the\s+)?(?:hospital|er|emergency|doctor|ambulance)\b"
     r"|\b(?:take|ingest|administer|prescribe|dosage\s+of)\s+\d+\s*(?:mg|g|ml|tablets?|pills?)\b"
     r"|\b(?:take|prescribe)\s+(?:aspirin|ibuprofen|paracetamol|tylenol|advil|antibiotics?)\b"
-    r"|\b(?:you\s+are\s+(?:completely\s+)?fine|nothing\s+to\s+worry\s+about|ignore\s+(?:the|your)\s+symptoms?)\b"
+    r"|\b(?:probably\s+)?nothing\s+serious\b"
+    r"|\b(?:safely\s+wait|safe\s+to\s+wait|can\s+(?:safely\s+)?wait|safe\s+to\s+delay|wait\s+it\s+out)\b"
+    r"|\b(?:you\s+are\s+(?:completely\s+)?fine|you\s+will\s+be\s+fine|you'll\s+be\s+fine)\b"
+    r"|\b(?:nothing\s+to\s+worry\s+about|do\s+not\s+worry|don't\s+worry)\b"
+    r"|\bignore\s+(?:the|your)\s+symptoms?\b"
+    r"|\bno\s+(?:medical\s+)?(?:treatment|care|evaluation|attention)\s+(?:is\s+)?needed\b"
 )
 
 DEFAULT_FALLBACK_POSSIBILITIES = ["A healthcare professional can evaluate your specific situation"]

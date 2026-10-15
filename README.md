@@ -348,14 +348,14 @@ pytest tests/ -v
 ```
 
 **Test Coverage:**
-- 120 automated backend tests covering:
-  - Emergency rule validation and natural language phrasings (24 tests)
-  - Unicode apostrophes, negation scope, failure of relief, and false-positive prevention (44 regression tests)
+- 138 automated backend tests covering:
+  - Emergency rule validation and clinical safety signs (26 tests)
+  - Unicode apostrophes, negation scope, failure of relief, temporal markers, and false-positive prevention (58 regression tests)
+  - AI provider abstraction, numbered lists, adversarial filtering, and error fallbacks (17 tests)
   - Async non-blocking execution and timeout enforcement (8 tests)
-  - AI provider abstraction, numbered lists, adversarial filtering, and error fallbacks (16 tests)
-  - API endpoints, validation, injection resistance, emergency AI bypass, and crisis routing (28 tests)
+  - API endpoints, validation, injection resistance, emergency AI bypass, and crisis/overdose routing (29 tests)
 
-**Expected Result:** All 120 tests pass
+**Expected Result:** All 138 tests pass
 
 ### Frontend Tests (Vitest)
 ```bash
