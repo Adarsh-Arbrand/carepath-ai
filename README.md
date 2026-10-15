@@ -35,7 +35,7 @@ CarePath AI is an intelligent healthcare navigation assistant that gathers sympt
 - Emergency warning sign detection (chest pain, breathing difficulty, stroke symptoms, severe bleeding, etc.)
 - Urgent condition detection (persistent fever, pain, vomiting/diarrhea)
 - Emergency contact guidance (112 for India, configurable for other regions)
-- Never reassures users they are safe - errs on the side of caution
+- Conservative, rule-based safety checks designed to err on the side of caution; does not provide diagnostic guarantees and is not clinically comprehensive
 
 ### AI-Powered Explanations (Optional)
 - Provider abstraction supporting multiple LLM APIs
@@ -97,9 +97,9 @@ CarePath AI is an intelligent healthcare navigation assistant that gathers sympt
 2. Frontend sends assessment to `/api/assess`
 3. Backend validates request (Pydantic schemas, length limits)
 4. **Safety Engine** evaluates symptoms against emergency/urgent rules
-5. **AI Service** (if configured) provides explanatory context
-6. Results combine safety determination + AI explanation
-7. AI output cannot downgrade safety classification
+5. **Emergency assessments** return deterministic emergency guidance immediately without calling or waiting for AI
+6. **Non-emergency assessments** call AI asynchronously with timeout; AI recommendations/possibilities are suppressed for emergency and urgent results
+7. AI output cannot alter deterministic safety classification
 8. Frontend displays results with urgency, reasoning, and next steps
 
 ## Safety and Privacy Design
@@ -348,15 +348,14 @@ pytest tests/ -v
 ```
 
 **Test Coverage:**
-- 55 tests covering:
-  - Emergency rule validation (12 tests)
-  - Urgent condition detection (4 tests)
-  - Negation handling (4 tests)
-  - API endpoint validation (16 tests)
-  - AI service functionality (9 tests)
-  - Edge cases and error handling (10 tests)
+- 120 automated backend tests covering:
+  - Emergency rule validation and natural language phrasings (24 tests)
+  - Unicode apostrophes, negation scope, failure of relief, and false-positive prevention (44 regression tests)
+  - Async non-blocking execution and timeout enforcement (8 tests)
+  - AI provider abstraction, numbered lists, adversarial filtering, and error fallbacks (16 tests)
+  - API endpoints, validation, injection resistance, emergency AI bypass, and crisis routing (28 tests)
 
-**Expected Result:** All 55 tests pass
+**Expected Result:** All 120 tests pass
 
 ### Frontend Tests (Vitest)
 ```bash

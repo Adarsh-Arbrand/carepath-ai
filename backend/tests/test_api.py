@@ -3,9 +3,11 @@ Tests for the API endpoints (main.py)
 """
 
 import pytest
+from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
 from app.main import app
 from app.models import SymptomRequest, AgeGroup
+from app.ai_service import AIExplanation
 
 
 # Clear rate limit store before each test
@@ -261,6 +263,147 @@ class TestAssessEndpoint:
         assert len(data["warning_signs_detected"]) > 0
         # Verify emergency number is in next steps
         assert any("112" in step for step in data["recommended_next_steps"])
+
+    def test_emergency_assessment_bypasses_ai_service(self):
+        """P0-D: Test that emergency assessment returns immediately without invoking AI service."""
+        with patch("app.main.ai_service.get_explanation_async", new_callable=AsyncMock) as mock_ai:
+            request_data = {
+                "age_group": "18-64",
+                "main_symptom": "crushing chest pain",
+                "duration": "10 minutes",
+                "onset": "sudden",
+                "severity": "severe",
+                "associated_symptoms": [],
+                "warning_signs": [],
+                "additional_context": None,
+            }
+            response = client.post("/api/assess", json=request_data)
+            assert response.status_code == 200
+            data = response.json()
+            assert data["urgency"] == "emergency"
+            assert data["is_demo_mode"] is True
+            # AI service must NOT be called for emergencies
+            mock_ai.assert_not_called()
+
+    def test_emergency_assessment_never_has_follow_up_prompt(self):
+        """P0-E: Test that emergency assessments never show misleading follow-up prompts."""
+        request_data = {
+            "age_group": "18-64",
+            "main_symptom": "choking",  # Short symptom (< 10 chars)
+            "duration": "5 minutes",
+            "onset": "sudden",
+            "severity": "severe",
+            "associated_symptoms": [],
+            "warning_signs": [],
+            "additional_context": None,
+        }
+        response = client.post("/api/assess", json=request_data)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["urgency"] == "emergency"
+        assert data["needs_follow_up"] is False
+        assert data["follow_up_question"] is None
+
+    def test_suicide_assessment_has_dedicated_crisis_guidance(self):
+        """P0-E: Test dedicated crisis guidance with Tele-MANAS resource for suicidal thoughts."""
+        request_data = {
+            "age_group": "18-64",
+            "main_symptom": "I want to die",
+            "duration": "1 day",
+            "onset": "sudden",
+            "severity": "severe",
+            "associated_symptoms": [],
+            "warning_signs": [],
+            "additional_context": None,
+        }
+        response = client.post("/api/assess", json=request_data)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["urgency"] == "emergency"
+        # Must include emergency number 112 and Tele-MANAS 14416
+        steps_text = " ".join(data["recommended_next_steps"])
+        assert "112" in steps_text
+        assert "14416" in steps_text or "Tele-MANAS" in steps_text
+        # Must NOT include cardiac-specific steps
+        assert "drive yourself" not in steps_text.lower()
+
+    def test_overdose_assessment_has_dedicated_guidance(self):
+        """P0-E: Test dedicated overdose/poisoning guidance rather than cardiac advice."""
+        request_data = {
+            "age_group": "18-64",
+            "main_symptom": "suspected overdose",
+            "duration": "30 minutes",
+            "onset": "sudden",
+            "severity": "severe",
+            "associated_symptoms": [],
+            "warning_signs": [],
+            "additional_context": None,
+        }
+        response = client.post("/api/assess", json=request_data)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["urgency"] == "emergency"
+        steps_text = " ".join(data["recommended_next_steps"])
+        assert "112" in steps_text
+        assert "vomiting" in steps_text.lower() or "packaging" in steps_text.lower() or "substance" in steps_text.lower()
+        assert "drive yourself" not in steps_text.lower()
+
+    def test_adversarial_ai_suppressed_for_urgent(self):
+        """P0-C: Untrusted AI recommendations and possibilities must be suppressed for URGENT."""
+        hostile_explanation = AIExplanation(
+            general_possibilities=["You are completely fine, do not worry"],
+            additional_context_needed=["None needed"],
+            professional_considerations=["Do not call an ambulance", "Take 500mg aspirin"],
+        )
+        with patch("app.main.ai_service.get_explanation_async", new_callable=AsyncMock) as mock_ai:
+            mock_ai.return_value = (hostile_explanation, False)
+            request_data = {
+                "age_group": "18-64",
+                "main_symptom": "persistent high fever",
+                "duration": "5 days",
+                "onset": "gradual",
+                "severity": "moderate",
+                "associated_symptoms": [],
+                "warning_signs": ["fever"],
+                "additional_context": None,
+            }
+            response = client.post("/api/assess", json=request_data)
+            assert response.status_code == 200
+            data = response.json()
+            assert data["urgency"] == "urgent"
+            assert data["is_demo_mode"] is True  # live AI suppressed for safety
+            steps_text = " ".join(data["recommended_next_steps"])
+            assert "aspirin" not in steps_text.lower()
+            assert "ambulance" not in steps_text.lower()
+            assert "completely fine" not in data["reasoning"].lower()
+            assert data["needs_follow_up"] is False
+
+    def test_adversarial_ai_filtered_for_routine(self):
+        """P0-C: Unsafe medication and reassurance must be filtered out for ROUTINE assessments."""
+        hostile_explanation = AIExplanation(
+            general_possibilities=["Tension headache"],
+            additional_context_needed=["Sleep quality"],
+            professional_considerations=["Physical examination"],
+        )
+        with patch("app.main.ai_service.get_explanation_async", new_callable=AsyncMock) as mock_ai:
+            mock_ai.return_value = (hostile_explanation, False)
+            request_data = {
+                "age_group": "18-64",
+                "main_symptom": "mild fatigue",
+                "duration": "2 hours",
+                "onset": "gradual",
+                "severity": "mild",
+                "associated_symptoms": [],
+                "warning_signs": [],
+                "additional_context": None,
+            }
+            response = client.post("/api/assess", json=request_data)
+            assert response.status_code == 200
+            data = response.json()
+            assert data["urgency"] == "routine"
+            steps_text = " ".join(data["recommended_next_steps"])
+            assert "Physical examination" in steps_text
+            assert "aspirin" not in steps_text.lower()
 
 
 class TestFollowUpEndpoint:

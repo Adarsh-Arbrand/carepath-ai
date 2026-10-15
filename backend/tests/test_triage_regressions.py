@@ -237,3 +237,231 @@ class TestNoRuleWasWeakened:
     def test_warning_signs_field_is_evaluated(self):
         urgency, _ = assess("tired", warning=["slurred speech"])
         assert urgency == EMERGENCY
+
+
+class TestNegationFailureOfRelief:
+    """
+    Failure-of-relief and intensifier phrases must not be treated as negating the symptom.
+    When a patient says 'no relief from chest pain' or 'medicine did not stop bleeding',
+    the symptom is actively present and untreated.
+    """
+
+    def test_no_relief_from_chest_pain_is_emergency(self):
+        urgency, signs = assess("No relief from chest pain.")
+        assert urgency == EMERGENCY
+        assert any("chest" in s.sign for s in signs)
+
+    def test_no_improvement_in_shortness_of_breath_is_emergency(self):
+        urgency, signs = assess("No improvement in shortness of breath.")
+        assert urgency == EMERGENCY
+        assert any("breath" in s.sign for s in signs)
+
+    def test_never_had_chest_pain_this_bad_is_emergency(self):
+        urgency, signs = assess("Never had chest pain this bad.")
+        assert urgency == EMERGENCY
+        assert any("chest" in s.sign for s in signs)
+
+    def test_the_medicine_did_not_stop_the_chest_pain_is_emergency(self):
+        urgency, signs = assess("The medicine did not stop the chest pain.")
+        assert urgency == EMERGENCY
+        assert any("chest" in s.sign for s in signs)
+
+    def test_not_able_to_stop_severe_bleeding_is_emergency(self):
+        urgency, signs = assess("Not able to stop severe bleeding.")
+        assert urgency == EMERGENCY
+        assert any("bleeding" in s.sign for s in signs)
+
+    def test_not_only_chest_pain_is_emergency(self):
+        urgency, signs = assess("Not only chest pain.")
+        assert urgency == EMERGENCY
+        assert any("chest" in s.sign for s in signs)
+
+    def test_unable_to_stop_heavy_bleeding_is_emergency(self):
+        urgency, signs = assess("unable to stop heavy bleeding")
+        assert urgency == EMERGENCY
+
+    def test_never_felt_chest_pain_this_severe_is_emergency(self):
+        urgency, signs = assess("never felt chest pain this severe")
+        assert urgency == EMERGENCY
+
+    def test_genuine_negatives_still_suppress(self):
+        for text in ("no chest pain", "not experiencing chest pain", "never had chest pain", "without chest pain"):
+            urgency, signs = assess("mild headache", context=text)
+            assert urgency != EMERGENCY, text
+            assert not any("chest" in s.sign for s in signs), text
+
+    def test_mixed_statement_still_flags_positive_symptom(self):
+        urgency, signs = assess("no chest pain but shortness of breath")
+        assert urgency == EMERGENCY
+        assert any("breath" in s.sign for s in signs)
+        assert not any("chest" in s.sign for s in signs)
+
+
+class TestDeterministicEmergencyDetection:
+    """
+    Realistic emergency phrasings, combined severity evaluations, infant distress,
+    and avoidance of false positive substring collisions.
+    """
+
+    def test_realistic_breathing_difficulties_are_emergencies(self):
+        phrases = [
+            "struggling to breathe",
+            "gasping for air",
+            "gasping for breath",
+            "hard to breathe",
+            "cant catch my breath",
+            "unable to catch my breath",
+            "lips turning blue",
+            "turning blue",
+            "severe wheezing",
+            "suffocating",
+        ]
+        for phrase in phrases:
+            urgency, _ = assess(phrase)
+            assert urgency == EMERGENCY, phrase
+
+    def test_heavy_bleeding_phrasings_are_emergencies(self):
+        phrases = [
+            "bleeding heavily",
+            "bleeding will not stop",
+            "bleeding won't stop",
+            "spurting blood",
+            "gushing blood",
+            "losing a lot of blood",
+            "blood soaking through",
+            "massive bleeding",
+        ]
+        for phrase in phrases:
+            urgency, _ = assess(phrase)
+            assert urgency == EMERGENCY, phrase
+
+    def test_chest_pressure_tightness_and_heart_attack_are_emergencies(self):
+        phrases = [
+            "pressure on my chest",
+            "elephant sitting on my chest",
+            "crushing chest pain",
+            "tightness in my chest",
+            "think i am having a heart attack",
+            "having a heart attack",
+            "pain radiating to left arm",
+            "pain radiating to jaw",
+            "cardiac arrest",
+        ]
+        for phrase in phrases:
+            urgency, _ = assess(phrase)
+            assert urgency == EMERGENCY, phrase
+
+    def test_severe_abdominal_pain_combined_with_severity(self):
+        # Abdominal / stomach / belly pain combined with severe severity
+        for symptom in ("abdominal pain", "stomach pain", "belly pain"):
+            request = SymptomRequest(
+                age_group=AgeGroup.ADULT,
+                main_symptom=symptom,
+                duration="6 hours",
+                onset="sudden",
+                severity="severe",
+                associated_symptoms=[],
+                warning_signs=[],
+            )
+            urgency, signs = TriageEngine.evaluate(request)
+            assert urgency == EMERGENCY, f"{symptom} with severe severity must be emergency"
+            assert any("abdomen" in s.sign or "abdominal" in s.sign or "stomach" in s.sign or "belly" in s.sign for s in signs)
+
+    def test_mild_abdominal_pain_is_urgent_not_emergency(self):
+        request = SymptomRequest(
+            age_group=AgeGroup.ADULT,
+            main_symptom="abdominal pain",
+            duration="2 days",
+            onset="gradual",
+            severity="mild",
+            associated_symptoms=[],
+            warning_signs=[],
+        )
+        urgency, _ = TriageEngine.evaluate(request)
+        assert urgency == URGENT  # urgent due to persistent pain, but NOT emergency
+
+    def test_infant_breathing_emergencies(self):
+        # Infant distress signs
+        for sign in ("chest sucking in", "ribs sucking in", "skin sucking in", "flaring nostrils", "grunting while breathing", "baby struggling to breathe"):
+            urgency, _ = assess(sign)
+            assert urgency == EMERGENCY, sign
+
+        # Fast breathing in an infant under 1 year
+        infant_request = SymptomRequest(
+            age_group=AgeGroup.INFANT,
+            main_symptom="rapid breathing",
+            duration="1 hour",
+            onset="sudden",
+            severity="moderate",
+            associated_symptoms=[],
+            warning_signs=[],
+        )
+        urgency, _ = TriageEngine.evaluate(infant_request)
+        assert urgency == EMERGENCY, "Rapid breathing in infant must trigger emergency"
+
+    def test_substring_false_positives_prevented(self):
+        # "fit" inside "fitting" must not trigger seizure emergency
+        urgency, _ = assess("mild headache", context="replacing a bathroom light fitting")
+        assert urgency != EMERGENCY
+
+        # "ache" inside "teacher" must not trigger urgent persistent pain
+        urgency, signs = assess("tired", context="I was speaking with my teacher")
+        assert urgency == ROUTINE
+        assert not any("ache" in s.sign for s in signs)
+
+        # "pain" inside "painting" must not trigger urgent persistent pain
+        urgency, signs = assess("dry cough", context="I spent the afternoon painting the bedroom")
+        assert urgency == ROUTINE
+        assert not any("pain" in s.sign for s in signs)
+
+
+class TestSuicideAndOverdoseDetection:
+    """
+    Mental health crisis, self-harm, suspected overdose, and realistic seizure phrasing.
+    """
+
+    def test_suicide_phrasing_triggers_emergency(self):
+        phrases = [
+            "I want to die",
+            "I wish I was dead",
+            "I wish I were dead",
+            "I don’t want to live anymore",
+            "I dont want to live anymore",
+            "no reason to live",
+            "better off dead",
+            "thinking of ending my life",
+        ]
+        for phrase in phrases:
+            urgency, signs = assess(phrase)
+            assert urgency == EMERGENCY, phrase
+            assert any("die" in s.sign or "dead" in s.sign or "live" in s.sign or "suicid" in s.sign or "life" in s.sign for s in signs), phrase
+
+    def test_overdose_phrasing_triggers_emergency(self):
+        phrases = [
+            "suspected overdose",
+            "swallowed a bottle of pills",
+            "swallowed a bottle",
+            "took an entire bottle",
+            "took all my pills",
+            "drank poison",
+            "drank bleach",
+        ]
+        for phrase in phrases:
+            urgency, signs = assess(phrase)
+            assert urgency == EMERGENCY, phrase
+            assert any("overdose" in s.sign or "pill" in s.sign or "poison" in s.sign or "bottle" in s.sign or "bleach" in s.sign for s in signs), phrase
+
+    def test_seizure_phrasing_triggers_emergency(self):
+        phrases = [
+            "having a seizure",
+            "grand mal",
+            "shaking uncontrollably",
+            "violent shaking",
+            "epileptic fit",
+            "jerking uncontrollably",
+        ]
+        for phrase in phrases:
+            urgency, signs = assess(phrase)
+            assert urgency == EMERGENCY, phrase
+            assert any("seiz" in s.sign or "fit" in s.sign or "shak" in s.sign or "jerk" in s.sign or "mal" in s.sign for s in signs), phrase
+

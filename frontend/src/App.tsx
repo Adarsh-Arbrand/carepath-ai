@@ -438,6 +438,7 @@ function App() {
                   'It does NOT provide medical treatment recommendations',
                   'It is NOT a substitute for professional medical evaluation',
                   'It has NOT been clinically validated',
+                  'It is NOT comprehensive and cannot guarantee detection of all medical emergencies',
                 ]}
               />
             </Section>
@@ -447,6 +448,7 @@ function App() {
                 CarePath AI uses a deterministic safety engine that runs independently of any AI system.
                 This engine is based on conservative rules derived from reputable public health sources
                 including the NHS (UK), Mayo Clinic, American Heart Association, CDC, and WHO.
+                The rule set is deliberately conservative, but is not comprehensive and has not been clinically validated.
                 The system is designed to err on the side of caution - when in doubt, it recommends
                 seeking professional medical evaluation.
               </p>

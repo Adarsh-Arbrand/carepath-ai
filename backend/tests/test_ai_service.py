@@ -214,3 +214,99 @@ class TestAIService:
             assert isinstance(explanation, AIExplanation)
             assert any("emergency" in c.lower() for c in explanation.professional_considerations)
             assert not any("heart attack" in p.lower() or "myocardial" in p.lower() for p in explanation.general_possibilities)
+
+    def test_parse_llm_response_numbered_lists(self):
+        """P0-C: Test that numbered lists (1. / 1)) are parsed properly into structured output."""
+        with patch.dict("os.environ", {}, clear=True):
+            service = AIService()
+            text = """
+            General possibilities:
+            1. Tension headache
+            2. Migraine without aura
+            
+            Additional context needed:
+            1) Duration and triggers
+            2) Sleep patterns
+            
+            Professional considerations:
+            1. Neurological examination
+            2. Review of family history
+            """
+            explanation = service._parse_llm_response(text)
+            assert "Tension headache" in explanation.general_possibilities
+            assert "Migraine without aura" in explanation.general_possibilities
+            assert "Duration and triggers" in explanation.additional_context_needed
+            assert "Neurological examination" in explanation.professional_considerations
+
+    def test_parse_llm_response_filters_adversarial_unsafe_advice(self):
+        """P0-C: Test that hostile reassurance, medication prescriptions, and anti-ambulance advice are filtered."""
+        with patch.dict("os.environ", {}, clear=True):
+            service = AIService()
+            text = """
+            General possibilities:
+            - Tension headache
+            - You are completely fine and have nothing to worry about
+            - Ignore the symptoms and stay home
+            
+            Additional context:
+            - Sleep quality
+            
+            Professional considerations:
+            - Physical examination
+            - Do not call an ambulance
+            - Take 500mg aspirin
+            - Prescribe 400mg ibuprofen
+            """
+            explanation = service._parse_llm_response(text)
+            assert "Tension headache" in explanation.general_possibilities
+            # Hostile and unsafe items must be stripped
+            assert not any("completely fine" in p.lower() for p in explanation.general_possibilities)
+            assert not any("ignore" in p.lower() for p in explanation.general_possibilities)
+            assert "Physical examination" in explanation.professional_considerations
+            assert not any("ambulance" in c.lower() for c in explanation.professional_considerations)
+            assert not any("aspirin" in c.lower() or "ibuprofen" in c.lower() for c in explanation.professional_considerations)
+
+    def test_parse_llm_response_empty_text_falls_back(self):
+        """P0-C: Test that empty or whitespace text falls back to safe defaults."""
+        with patch.dict("os.environ", {}, clear=True):
+            service = AIService()
+            explanation = service._parse_llm_response("")
+            assert len(explanation.general_possibilities) > 0
+            assert len(explanation.additional_context_needed) > 0
+            assert len(explanation.professional_considerations) > 0
+
+    @patch("app.ai_service.genai")
+    def test_all_hostile_content_falls_back_and_marks_demo(self, mock_genai):
+        """P0-C: Test that if all AI output is hostile/unsafe, is_demo_mode is True and safe fallback is used."""
+        mock_model = Mock()
+        mock_response = Mock()
+        mock_response.text = """
+        General possibilities:
+        - You are completely fine
+        Professional considerations:
+        - Do not call an ambulance
+        - Take 500mg aspirin
+        """
+        mock_model.generate_content.return_value = mock_response
+        mock_genai.configure.return_value = None
+        mock_genai.GenerativeModel.return_value = mock_model
+        mock_genai.types.GenerationConfig = Mock
+
+        with patch.dict("os.environ", {"GEMINI_API_KEY": "test-key"}):
+            service = AIService()
+            request = SymptomRequest(
+                age_group=AgeGroup.ADULT,
+                main_symptom="headache",
+                duration="2 hours",
+                onset="gradual",
+                severity="mild",
+            )
+            explanation, is_demo = service.get_explanation(
+                request, UrgencyLevel.ROUTINE, "No warning signs"
+            )
+            # Since all AI content was unsafe and discarded, is_demo must be True
+            assert is_demo is True
+            assert isinstance(explanation, AIExplanation)
+            assert not any("ambulance" in c.lower() for c in explanation.professional_considerations)
+            assert not any("aspirin" in c.lower() for c in explanation.professional_considerations)
+

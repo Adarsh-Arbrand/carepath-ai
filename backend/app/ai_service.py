@@ -15,12 +15,26 @@ IMPORTANT:
 
 import asyncio
 import os
+import re
 from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field
 import google.generativeai as genai
 from app.models import SymptomRequest, UrgencyLevel
 
 DEFAULT_AI_TIMEOUT_SECONDS = 30
+
+_LIST_ITEM_RE = re.compile(r"^(?:[-*•]|\d+[\.\)])\s*(.+)$")
+
+_UNSAFE_AI_CONTENT_RE = re.compile(
+    r"(?i)\b(?:do\s+not|don't|no\s+need\s+to|never)\s+(?:call|contact|go\s+to)\s+(?:an?\s+)?(?:ambulance|emergency|hospital|er|112|911)\b"
+    r"|\b(?:take|ingest|administer|prescribe|dosage\s+of)\s+\d+\s*(?:mg|g|ml|tablets?|pills?)\b"
+    r"|\b(?:take|prescribe)\s+(?:aspirin|ibuprofen|paracetamol|tylenol|advil|antibiotics?)\b"
+    r"|\b(?:you\s+are\s+(?:completely\s+)?fine|nothing\s+to\s+worry\s+about|ignore\s+(?:the|your)\s+symptoms?)\b"
+)
+
+DEFAULT_FALLBACK_POSSIBILITIES = ["A healthcare professional can evaluate your specific situation"]
+DEFAULT_FALLBACK_CONTEXT = ["Duration and progression of symptoms", "Any relevant medical history"]
+DEFAULT_FALLBACK_CONSIDERATIONS = ["Complete physical examination", "Review of medical history"]
 
 
 def _read_timeout_seconds() -> int:
@@ -86,7 +100,8 @@ class AIService:
 
         try:
             explanation = self._call_llm(request, safety_urgency, safety_reasoning)
-            return explanation, False
+            is_fallback = (explanation.general_possibilities == DEFAULT_FALLBACK_POSSIBILITIES)
+            return explanation, is_fallback
         except Exception as e:
             print(f"AI call failed: {e}")
             return self._get_demo_explanation(request, safety_urgency), True
@@ -212,9 +227,13 @@ Remember: You are providing general educational information only, not medical ad
                 current_section = 'considerations'
                 continue
 
-            # Add to appropriate section
-            if line.startswith('-') or line.startswith('•') or line.startswith('*'):
-                content = line.lstrip('-•*').strip()
+            # Add to appropriate section (supports bullet points and numbered lists)
+            m = _LIST_ITEM_RE.match(line)
+            if m:
+                content = m.group(1).strip()
+                # Safety filter: discard hostile, contradictory, or unsafe medication instructions
+                if _UNSAFE_AI_CONTENT_RE.search(content):
+                    continue
                 if current_section == 'possibilities':
                     possibilities.append(content)
                 elif current_section == 'context':
@@ -222,13 +241,13 @@ Remember: You are providing general educational information only, not medical ad
                 elif current_section == 'considerations':
                     considerations.append(content)
 
-        # Fallback if parsing failed
+        # Fallback if parsing failed or all content was rejected
         if not possibilities:
-            possibilities = ["A healthcare professional can evaluate your specific situation"]
+            possibilities = list(DEFAULT_FALLBACK_POSSIBILITIES)
         if not context_needed:
-            context_needed = ["Duration and progression of symptoms", "Any relevant medical history"]
+            context_needed = list(DEFAULT_FALLBACK_CONTEXT)
         if not considerations:
-            considerations = ["Complete physical examination", "Review of medical history"]
+            considerations = list(DEFAULT_FALLBACK_CONSIDERATIONS)
 
         return AIExplanation(
             general_possibilities=possibilities[:5],

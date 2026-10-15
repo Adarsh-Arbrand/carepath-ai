@@ -153,7 +153,77 @@ async def assess_symptoms(request: Request, data: SymptomRequest):
     else:
         safety_reasoning = "No specific emergency warning signs detected based on provided information."
 
-    # Get AI explanation (or demo mode fallback)
+    emergency_number = TriageEngine.get_emergency_contact()
+
+    # P0-D: Return deterministic emergency result immediately WITHOUT invoking or waiting for AI service
+    if safety_urgency == UrgencyLevel.EMERGENCY:
+        is_crisis = any(
+            any(k in ws.sign for k in ("suicid", "die", "dead", "live", "self harm", "hurt myself", "harming myself", "kill myself", "end my life", "take my own life"))
+            for ws in warning_signs
+        )
+        is_overdose = any(
+            any(k in ws.sign for k in ("overdose", "pill", "poison", "bottle", "bleach", "chemical"))
+            for ws in warning_signs
+        )
+
+        if is_crisis:
+            next_steps = [
+                f"Contact emergency services immediately ({emergency_number}) or call the Tele-MANAS mental health helpline (14416 / 1800-891-4416)",
+                "Stay with someone you trust - do not remain alone",
+                "Remove any harmful objects or medications from your immediate surroundings",
+                "Reach out immediately to a trusted family member, mental health professional, or hospital emergency room",
+            ]
+            reasoning = (
+                safety_reasoning
+                + "\n\n"
+                + "Recommended action: Immediate crisis support and safety evaluation are required. Please reach out for help right now."
+            )
+        elif is_overdose:
+            next_steps = [
+                f"Contact emergency services immediately ({emergency_number})",
+                "Do not induce vomiting unless explicitly directed by a poison control or medical professional",
+                "If safe to do so, locate and retain the medication packaging, bottle, or substance for emergency responders",
+                "If the person is unconscious, having difficulty breathing, or having a seizure, place them in the recovery position and call emergency services immediately",
+            ]
+            reasoning = (
+                safety_reasoning
+                + "\n\n"
+                + "Recommended action: Suspected overdose or poisoning is a time-critical medical emergency. Seek immediate emergency evaluation."
+            )
+        else:
+            next_steps = [
+                f"Contact emergency services immediately ({emergency_number})",
+                "Do not drive yourself - have someone else drive or call emergency transport",
+                "Stay calm and try to remain still",
+                "If possible, have someone stay with you",
+            ]
+            reasoning = (
+                safety_reasoning
+                + "\n\n"
+                + "Recommended action: Immediate emergency medical evaluation is required. Do not delay seeking care."
+            )
+
+        limitations = [
+            "This is an informational tool, not a diagnostic system",
+            "This has not been clinically validated",
+            "This cannot replace professional medical evaluation",
+            "Always consult a qualified healthcare provider for medical concerns",
+            "Emergency/crisis resources cited (112, Tele-MANAS 14416) are for India; if outside India, contact your local emergency services (e.g. 988 in US/Canada, 999 in UK)",
+        ]
+
+        # P0-E: Never prompt for additional information in an emergency
+        return AssessmentResponse(
+            urgency=safety_urgency,
+            warning_signs_detected=warning_signs,
+            reasoning=reasoning,
+            recommended_next_steps=next_steps,
+            limitations=limitations,
+            is_demo_mode=True,  # live AI bypassed for emergency safety
+            needs_follow_up=False,
+            follow_up_question=None,
+        )
+
+    # For non-emergency assessments (URGENT, ROUTINE, UNKNOWN), query AI asynchronously with timeout
     try:
         ai_explanation, is_demo_mode = await ai_service.get_explanation_async(
             data, safety_urgency, safety_reasoning
@@ -164,22 +234,20 @@ async def assess_symptoms(request: Request, data: SymptomRequest):
             data, safety_urgency
         ), True
 
-    # Build recommended next steps based on urgency
-    if safety_urgency == UrgencyLevel.EMERGENCY:
-        emergency_number = TriageEngine.get_emergency_contact()
-        next_steps = [
-            f"Contact emergency services immediately ({emergency_number})",
-            "Do not drive yourself - have someone else drive or call emergency transport",
-            "Stay calm and try to remain still",
-            "If possible, have someone stay with you",
-        ]
-    elif safety_urgency == UrgencyLevel.URGENT:
+    # P0-C: For URGENT assessments, suppress untrusted AI-authored next steps and possibilities
+    if safety_urgency == UrgencyLevel.URGENT:
         next_steps = [
             "Seek medical attention today",
             "Contact your healthcare provider or urgent care",
             "Monitor symptoms for any changes",
-            "If symptoms worsen, seek emergency care",
+            f"If symptoms worsen or you develop severe symptoms, seek emergency care immediately ({emergency_number})",
         ]
+        reasoning = (
+            safety_reasoning
+            + "\n\n"
+            + "Recommended action: Urgent medical evaluation is recommended today to assess persistent or concerning symptoms."
+        )
+        is_demo_mode = True  # AI possibilities and recommendations suppressed for safety
     elif safety_urgency == UrgencyLevel.ROUTINE:
         next_steps = [
             "Schedule an appointment with a healthcare provider",
@@ -187,17 +255,28 @@ async def assess_symptoms(request: Request, data: SymptomRequest):
             "If symptoms worsen or new symptoms develop, seek medical attention",
             "Rest and stay hydrated as appropriate",
         ]
+        # Include sanitized AI considerations for routine cases
+        next_steps.extend(ai_explanation.professional_considerations)
+        reasoning = (
+            safety_reasoning
+            + "\n\n"
+            + "General possibilities: "
+            + "; ".join(ai_explanation.general_possibilities)
+        )
     else:  # UNKNOWN
         next_steps = [
             "More information is needed for proper assessment",
             "Consider consulting a healthcare provider",
             "If you are concerned about your symptoms, seek medical attention",
         ]
+        next_steps.extend(ai_explanation.professional_considerations)
+        reasoning = (
+            safety_reasoning
+            + "\n\n"
+            + "General possibilities: "
+            + "; ".join(ai_explanation.general_possibilities)
+        )
 
-    # Add AI-provided considerations
-    next_steps.extend(ai_explanation.professional_considerations)
-
-    # Build limitations
     limitations = [
         "This is an informational tool, not a diagnostic system",
         "This has not been clinically validated",
@@ -209,19 +288,19 @@ async def assess_symptoms(request: Request, data: SymptomRequest):
             "Operating in demo mode - AI explanations are generalized"
         )
 
-    # Determine if follow-up is needed
+    # Determine if follow-up is needed (NEVER on emergency or urgent)
     needs_follow_up = False
     follow_up_question = None
 
-    # Simple logic: if information is very limited, ask for more
-    if len(data.main_symptom) < 10 and not data.associated_symptoms:
-        needs_follow_up = True
-        follow_up_question = "Could you describe any other symptoms you're experiencing, or provide more details about how the symptom feels?"
+    if safety_urgency not in (UrgencyLevel.EMERGENCY, UrgencyLevel.URGENT):
+        if len(data.main_symptom) < 10 and not data.associated_symptoms:
+            needs_follow_up = True
+            follow_up_question = "Could you describe any other symptoms you're experiencing, or provide more details about how the symptom feels?"
 
     return AssessmentResponse(
         urgency=safety_urgency,
         warning_signs_detected=warning_signs,
-        reasoning=safety_reasoning + "\n\n" + "General possibilities: " + "; ".join(ai_explanation.general_possibilities),
+        reasoning=reasoning,
         recommended_next_steps=next_steps,
         limitations=limitations,
         is_demo_mode=is_demo_mode,
